@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>2026北京国际电影节展映排片</title>
+    <link rel="stylesheet" href="schedule-browser/styles.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">BJIFF Browser</p>
+          <h1>2026北京展映浏览排片</h1>
+        </div>
+        <div class="hero-stats" id="hero-stats"></div>
+      </header>
+
+      <main class="layout">
+        <aside class="sidebar">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Browse</p>
+                <h2>浏览排片</h2>
+              </div>
+            </div>
+
+            <label class="field">
+              <span>日期</span>
+              <select id="filter-date"></select>
+            </label>
+
+            <label class="field">
+              <span>影院</span>
+              <select id="filter-cinema"></select>
+            </label>
+
+            <label class="field">
+              <span>单元</span>
+              <select id="filter-unit"></select>
+            </label>
+
+            <label class="field">
+              <span>关键词</span>
+              <input id="filter-search" type="search" placeholder="片名 / 影院 / 活动">
+            </label>
+
+            <div class="quick-actions">
+              <button class="button secondary" id="reset-filters">重置筛选</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Selected</p>
+                <h2>场次详情</h2>
+              </div>
+            </div>
+            <div id="screening-detail" class="detail-panel"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Summary</p>
+                <h2>当日概览</h2>
+              </div>
+            </div>
+            <div class="summary-grid" id="day-summary-grid"></div>
+          </section>
+        </aside>
+
+        <section class="content">
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Timeline</p>
+                <h2>当日排片时间轴</h2>
+              </div>
+              <div class="day-summary" id="day-summary"></div>
+            </div>
+
+            <div class="legend">
+              <span><i class="legend-dot activity"></i> 含活动信息</span>
+            </div>
+
+            <div class="timeline-scroll">
+              <div id="timeline"></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head compact">
+              <div>
+                <p class="eyebrow">List</p>
+                <h2>当日场次列表</h2>
+              </div>
+            </div>
+            <div id="screening-list" class="screening-list"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="data/festival-data.js"></script>
+    <script src="schedule-browser/app.js"></script>
+  </body>
+</html>
