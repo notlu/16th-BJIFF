@@ -1,13 +1,27 @@
 const data = window.FESTIVAL_DATA || null;
 const ALL_DATES_VALUE = "all";
 const ALL_CITIES_VALUE = "all";
-const ALL_CINEMAS_VALUE = "all";
+const ANY_ACTIVITY_VALUE = "any";
+const WITH_ACTIVITY_VALUE = "with-activity";
+const WITHOUT_ACTIVITY_VALUE = "without-activity";
+const PRE_ACTIVITY_VALUE = "pre-activity";
+const PRE_GUEST_VALUE = "pre-guest";
+const POST_GUEST_VALUE = "post-guest";
 const CITY_ORDER = ["北京", "天津", "雄安"];
+const ACTIVITY_OPTIONS = [
+  { value: ANY_ACTIVITY_VALUE, label: "不限活动" },
+  { value: WITH_ACTIVITY_VALUE, label: "有活动场次" },
+  { value: WITHOUT_ACTIVITY_VALUE, label: "无活动场次" },
+  { value: PRE_ACTIVITY_VALUE, label: "映前活动" },
+  { value: PRE_GUEST_VALUE, label: "映前主创交流" },
+  { value: POST_GUEST_VALUE, label: "映后主创交流" },
+];
 
 const state = {
   selectedDate: ALL_DATES_VALUE,
   selectedCity: ALL_CITIES_VALUE,
-  selectedCinemaName: ALL_CINEMAS_VALUE,
+  selectedCinemaNames: [],
+  selectedActivity: ANY_ACTIVITY_VALUE,
   selectedUnit: "all",
   searchTerm: "",
   selectedScreeningId: null,
@@ -66,9 +80,13 @@ function captureElements() {
     "filter-date",
     "filter-city",
     "filter-cinema",
+    "filter-cinema-summary",
+    "filter-activity",
     "filter-unit",
     "filter-search",
     "reset-filters",
+    "select-all-cinemas",
+    "clear-cinemas",
     "day-summary",
     "timeline",
     "screening-list",
@@ -88,6 +106,8 @@ function populateControls() {
     ...CITY_ORDER.map((city) => ({ value: city, label: city })),
   ]);
 
+  setSelectOptions(elements["filter-activity"], ACTIVITY_OPTIONS);
+
   setSelectOptions(elements["filter-unit"], [
     { value: "all", label: "全部单元" },
     ...data.units.map((unit) => ({ value: unit, label: unit })),
@@ -95,6 +115,7 @@ function populateControls() {
 
   elements["filter-date"].value = ALL_DATES_VALUE;
   elements["filter-city"].value = ALL_CITIES_VALUE;
+  elements["filter-activity"].value = ANY_ACTIVITY_VALUE;
   populateCinemaControl();
 }
 
@@ -112,8 +133,32 @@ function attachEvents() {
     renderAll();
   });
 
-  elements["filter-cinema"].addEventListener("change", (event) => {
-    state.selectedCinemaName = event.target.value;
+  elements["filter-cinema"].addEventListener("click", (event) => {
+    const button = event.target.closest("[data-cinema-name]");
+    if (!button) return;
+
+    toggleCinemaSelection(button.dataset.cinemaName);
+    populateCinemaControl();
+    syncSelection();
+    renderAll();
+  });
+
+  elements["select-all-cinemas"].addEventListener("click", () => {
+    state.selectedCinemaNames = getAvailableCinemas().map((cinema) => cinema.name);
+    populateCinemaControl();
+    syncSelection();
+    renderAll();
+  });
+
+  elements["clear-cinemas"].addEventListener("click", () => {
+    state.selectedCinemaNames = [];
+    populateCinemaControl();
+    syncSelection();
+    renderAll();
+  });
+
+  elements["filter-activity"].addEventListener("change", (event) => {
+    state.selectedActivity = event.target.value;
     syncSelection();
     renderAll();
   });
@@ -133,12 +178,14 @@ function attachEvents() {
   elements["reset-filters"].addEventListener("click", () => {
     state.selectedDate = ALL_DATES_VALUE;
     state.selectedCity = ALL_CITIES_VALUE;
-    state.selectedCinemaName = ALL_CINEMAS_VALUE;
+    state.selectedCinemaNames = [];
+    state.selectedActivity = ANY_ACTIVITY_VALUE;
     state.selectedUnit = "all";
     state.searchTerm = "";
 
     elements["filter-date"].value = state.selectedDate;
     elements["filter-city"].value = state.selectedCity;
+    elements["filter-activity"].value = state.selectedActivity;
     elements["filter-unit"].value = state.selectedUnit;
     elements["filter-search"].value = "";
 
@@ -160,7 +207,8 @@ function getFilteredScreenings() {
   return runtime.screenings.filter((screening) => {
     if (state.selectedDate !== ALL_DATES_VALUE && screening.date !== state.selectedDate) return false;
     if (state.selectedCity !== ALL_CITIES_VALUE && screening.city !== state.selectedCity) return false;
-    if (state.selectedCinemaName !== ALL_CINEMAS_VALUE && screening.cinemaName !== state.selectedCinemaName) return false;
+    if (state.selectedCinemaNames.length && !state.selectedCinemaNames.includes(screening.cinemaName)) return false;
+    if (!matchesActivityFilter(screening, state.selectedActivity)) return false;
     if (state.selectedUnit !== "all" && screening.unit !== state.selectedUnit) return false;
     if (!query) return true;
 
@@ -406,22 +454,38 @@ function buildOverlapLayout(screenings) {
 }
 
 function populateCinemaControl() {
-  const cinemas = runtime.cinemas.filter(
-    (cinema) => state.selectedCity === ALL_CITIES_VALUE || cinema.city === state.selectedCity,
+  const cinemas = getAvailableCinemas();
+
+  state.selectedCinemaNames = state.selectedCinemaNames.filter((selectedName) =>
+    cinemas.some((cinema) => cinema.name === selectedName),
   );
 
-  setSelectOptions(elements["filter-cinema"], [
-    { value: ALL_CINEMAS_VALUE, label: "全部影院" },
-    ...cinemas.map((cinema) => ({
-      value: cinema.name,
-      label: state.selectedCity === ALL_CITIES_VALUE ? `${cinema.city} · ${cinema.name}` : cinema.name,
-    })),
-  ]);
+  elements["filter-cinema"].innerHTML = cinemas
+    .map((cinema) => {
+      const isSelected = state.selectedCinemaNames.includes(cinema.name);
+      return `
+        <button
+          type="button"
+          class="choice-item ${isSelected ? "selected" : ""}"
+          data-cinema-name="${escapeHtml(cinema.name)}"
+          aria-pressed="${isSelected ? "true" : "false"}"
+        >
+          ${escapeHtml(state.selectedCity === ALL_CITIES_VALUE ? `${cinema.city} · ${cinema.name}` : cinema.name)}
+        </button>
+      `;
+    })
+    .join("");
 
-  if (!cinemas.find((cinema) => cinema.name === state.selectedCinemaName)) {
-    state.selectedCinemaName = ALL_CINEMAS_VALUE;
+  if (!cinemas.length) {
+    elements["filter-cinema-summary"].textContent = "当前城市下没有可选影院";
+  } else if (!state.selectedCinemaNames.length) {
+    elements["filter-cinema-summary"].textContent = `未限制影院，当前覆盖 ${cinemas.length} 家`;
+  } else {
+    elements["filter-cinema-summary"].textContent = `已选 ${state.selectedCinemaNames.length} / ${cinemas.length} 家影院`;
   }
-  elements["filter-cinema"].value = state.selectedCinemaName;
+
+  elements["select-all-cinemas"].disabled = !cinemas.length || state.selectedCinemaNames.length === cinemas.length;
+  elements["clear-cinemas"].disabled = !state.selectedCinemaNames.length;
 }
 
 function compareScreenings(a, b) {
@@ -454,10 +518,35 @@ function getCitySummaryLabel() {
   return state.selectedCity === ALL_CITIES_VALUE ? "全部城市" : state.selectedCity;
 }
 
+function matchesActivityFilter(screening, activityFilter) {
+  if (activityFilter === ANY_ACTIVITY_VALUE) return true;
+  if (activityFilter === WITH_ACTIVITY_VALUE) return screening.hasActivity;
+  if (activityFilter === WITHOUT_ACTIVITY_VALUE) return !screening.hasActivity;
+  if (activityFilter === PRE_ACTIVITY_VALUE) return screening.activitySummary === "映前活动";
+  if (activityFilter === PRE_GUEST_VALUE) return screening.activitySummary === "映前主创交流";
+  if (activityFilter === POST_GUEST_VALUE) return screening.activitySummary === "映后主创交流";
+  return true;
+}
+
 function setSelectOptions(select, options) {
   select.innerHTML = options
     .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
     .join("");
+}
+
+function getAvailableCinemas() {
+  return runtime.cinemas.filter(
+    (cinema) => state.selectedCity === ALL_CITIES_VALUE || cinema.city === state.selectedCity,
+  );
+}
+
+function toggleCinemaSelection(cinemaName) {
+  if (!cinemaName) return;
+  if (state.selectedCinemaNames.includes(cinemaName)) {
+    state.selectedCinemaNames = state.selectedCinemaNames.filter((name) => name !== cinemaName);
+    return;
+  }
+  state.selectedCinemaNames = [...state.selectedCinemaNames, cinemaName];
 }
 
 function colorFromUnit(unit) {

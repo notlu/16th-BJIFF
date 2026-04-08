@@ -36,9 +36,21 @@
               <select id="filter-city"></select>
             </label>
 
-            <label class="field">
+            <div class="field">
               <span>影院</span>
-              <select id="filter-cinema"></select>
+              <div class="field-toolbar">
+                <small class="field-hint" id="filter-cinema-summary">未限制影院，默认显示全部</small>
+                <div class="field-toolbar-actions">
+                  <button class="mini-button filter-action-button" id="select-all-cinemas" type="button">全选</button>
+                  <button class="mini-button filter-action-button" id="clear-cinemas" type="button">清空</button>
+                </div>
+              </div>
+              <div id="filter-cinema" class="choice-list" role="group" aria-label="影院多选"></div>
+            </div>
+
+            <label class="field">
+              <span>活动</span>
+              <select id="filter-activity"></select>
             </label>
 
             <label class="field">
