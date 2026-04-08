@@ -1,9 +1,13 @@
 const data = window.FESTIVAL_DATA || null;
 const ALL_DATES_VALUE = "all";
+const ALL_CITIES_VALUE = "all";
+const ALL_CINEMAS_VALUE = "all";
+const CITY_ORDER = ["北京", "天津", "雄安"];
 
 const state = {
   selectedDate: ALL_DATES_VALUE,
-  selectedCinemaId: "all",
+  selectedCity: ALL_CITIES_VALUE,
+  selectedCinemaName: ALL_CINEMAS_VALUE,
   selectedUnit: "all",
   searchTerm: "",
   selectedScreeningId: null,
@@ -11,8 +15,7 @@ const state = {
 
 const runtime = {
   screenings: [],
-  screeningMap: new Map(),
-  cinemaMap: new Map(),
+  cinemas: [],
 };
 
 const elements = {};
@@ -26,7 +29,6 @@ document.addEventListener("DOMContentLoaded", () => {
   prepareRuntimeData();
   captureElements();
   populateControls();
-  buildHeroStats();
   attachEvents();
 
   state.selectedDate = ALL_DATES_VALUE;
@@ -35,34 +37,40 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function prepareRuntimeData() {
+  const cinemaMap = new Map();
   runtime.screenings = data.screenings
     .map((screening) => {
       const item = {
         ...screening,
+        city: inferCity(screening.cinemaZoneId),
         startAtMs: parseIsoToLocalMs(screening.startAt),
         normalizedFilmTitle: normalizeText(screening.filmTitle),
         normalizedCinemaName: normalizeText(screening.cinemaName),
         normalizedActivity: normalizeText(screening.activitySummary || ""),
       };
-      runtime.screeningMap.set(item.id, item);
+      if (!cinemaMap.has(item.cinemaName)) {
+        cinemaMap.set(item.cinemaName, {
+          name: item.cinemaName,
+          city: item.city,
+        });
+      }
       return item;
     })
     .sort(compareScreenings);
 
-  data.cinemas.forEach((cinema) => runtime.cinemaMap.set(cinema.id, cinema));
+  runtime.cinemas = Array.from(cinemaMap.values()).sort(compareCinemas);
 }
 
 function captureElements() {
   [
-    "hero-stats",
     "filter-date",
+    "filter-city",
     "filter-cinema",
     "filter-unit",
     "filter-search",
     "reset-filters",
     "day-summary",
     "timeline",
-    "screening-detail",
     "screening-list",
   ].forEach((id) => {
     elements[id] = document.getElementById(id);
@@ -75,12 +83,9 @@ function populateControls() {
     ...data.dates.map((date) => ({ value: date, label: formatDateLabel(date) })),
   ]);
 
-  setSelectOptions(elements["filter-cinema"], [
-    { value: "all", label: "全部影院" },
-    ...data.cinemas.map((cinema) => ({
-      value: cinema.id,
-      label: `${cinema.name} · ${cinema.zoneLabel}`,
-    })),
+  setSelectOptions(elements["filter-city"], [
+    { value: ALL_CITIES_VALUE, label: "全部城市" },
+    ...CITY_ORDER.map((city) => ({ value: city, label: city })),
   ]);
 
   setSelectOptions(elements["filter-unit"], [
@@ -89,26 +94,8 @@ function populateControls() {
   ]);
 
   elements["filter-date"].value = ALL_DATES_VALUE;
-}
-
-function buildHeroStats() {
-  const cards = [
-    { value: data.summary.screeningCount, label: "主表场次" },
-    { value: data.summary.filmCount, label: "影片数" },
-    { value: data.summary.cinemaCount, label: "影院数" },
-    { value: data.summary.dateCount, label: "展映天数" },
-  ];
-
-  elements["hero-stats"].innerHTML = cards
-    .map(
-      (card) => `
-        <div class="stat-card">
-          <strong>${escapeHtml(String(card.value))}</strong>
-          <span>${escapeHtml(card.label)}</span>
-        </div>
-      `,
-    )
-    .join("");
+  elements["filter-city"].value = ALL_CITIES_VALUE;
+  populateCinemaControl();
 }
 
 function attachEvents() {
@@ -118,8 +105,15 @@ function attachEvents() {
     renderAll();
   });
 
+  elements["filter-city"].addEventListener("change", (event) => {
+    state.selectedCity = event.target.value;
+    populateCinemaControl();
+    syncSelection();
+    renderAll();
+  });
+
   elements["filter-cinema"].addEventListener("change", (event) => {
-    state.selectedCinemaId = event.target.value;
+    state.selectedCinemaName = event.target.value;
     syncSelection();
     renderAll();
   });
@@ -138,15 +132,17 @@ function attachEvents() {
 
   elements["reset-filters"].addEventListener("click", () => {
     state.selectedDate = ALL_DATES_VALUE;
-    state.selectedCinemaId = "all";
+    state.selectedCity = ALL_CITIES_VALUE;
+    state.selectedCinemaName = ALL_CINEMAS_VALUE;
     state.selectedUnit = "all";
     state.searchTerm = "";
 
     elements["filter-date"].value = state.selectedDate;
-    elements["filter-cinema"].value = state.selectedCinemaId;
+    elements["filter-city"].value = state.selectedCity;
     elements["filter-unit"].value = state.selectedUnit;
     elements["filter-search"].value = "";
 
+    populateCinemaControl();
     syncSelection();
     renderAll();
   });
@@ -163,7 +159,8 @@ function getFilteredScreenings() {
   const query = normalizeText(state.searchTerm);
   return runtime.screenings.filter((screening) => {
     if (state.selectedDate !== ALL_DATES_VALUE && screening.date !== state.selectedDate) return false;
-    if (state.selectedCinemaId !== "all" && screening.cinemaId !== state.selectedCinemaId) return false;
+    if (state.selectedCity !== ALL_CITIES_VALUE && screening.city !== state.selectedCity) return false;
+    if (state.selectedCinemaName !== ALL_CINEMAS_VALUE && screening.cinemaName !== state.selectedCinemaName) return false;
     if (state.selectedUnit !== "all" && screening.unit !== state.selectedUnit) return false;
     if (!query) return true;
 
@@ -180,15 +177,14 @@ function getFilteredScreenings() {
 function renderAll() {
   renderSummary();
   renderTimeline();
-  renderDetail();
   renderList();
 }
 
 function renderSummary() {
   const screenings = getFilteredScreenings();
   elements["day-summary"].textContent = screenings.length
-    ? `${getDateSummaryLabel()} · ${screenings.length} 场`
-    : `${getDateSummaryLabel()} · 当前没有匹配场次`;
+    ? `${getDateSummaryLabel()} · ${getCitySummaryLabel()} · ${screenings.length} 场`
+    : `${getDateSummaryLabel()} · ${getCitySummaryLabel()} · 当前没有匹配场次`;
 }
 
 function renderTimeline() {
@@ -200,18 +196,18 @@ function renderTimeline() {
 
   const grouped = groupBy(
     screenings,
-    state.selectedDate === ALL_DATES_VALUE ? (item) => `${item.date}::${item.cinemaId}` : (item) => item.cinemaId,
+    state.selectedDate === ALL_DATES_VALUE
+      ? (item) => `${item.date}::${item.city}::${item.cinemaName}`
+      : (item) => `${item.city}::${item.cinemaName}`,
   );
   const rows = Array.from(grouped.entries())
     .map(([rowKey, rowItems]) => {
       const firstScreening = rowItems[0];
-      const cinema = runtime.cinemaMap.get(firstScreening.cinemaId);
-      if (!cinema) return null;
-
       return {
         rowKey,
         date: firstScreening.date,
-        cinema,
+        city: firstScreening.city,
+        cinemaName: firstScreening.cinemaName,
         items: rowItems.slice().sort(compareScreenings),
       };
     })
@@ -223,7 +219,7 @@ function renderTimeline() {
 
       const aStart = a.items.reduce((min, item) => Math.min(min, item.startMinuteOfDay), 9999);
       const bStart = b.items.reduce((min, item) => Math.min(min, item.startMinuteOfDay), 9999);
-      return aStart - bStart || a.cinema.name.localeCompare(b.cinema.name, "zh-Hans-CN");
+      return aStart - bStart || compareCinemas(a, b);
     });
 
   const dayStartMin = 9 * 60;
@@ -240,12 +236,19 @@ function renderTimeline() {
   }
 
   const rowMarkup = rows
-    .map(({ rowKey, date, cinema, items: rowItems }) => {
-      const labelTitle = state.selectedDate === ALL_DATES_VALUE ? formatDateLabel(date) : cinema.name;
-      const labelMeta =
-        state.selectedDate === ALL_DATES_VALUE
-          ? `${cinema.name} · ${cinema.zoneLabel} · ${rowItems.length} 场`
-          : `${cinema.zoneLabel} · ${rowItems.length} 场`;
+    .map(({ rowKey, date, city, cinemaName, items: rowItems }) => {
+      const labelTitle = state.selectedDate === ALL_DATES_VALUE ? formatDateLabel(date) : cinemaName;
+      const labelMetaParts = [];
+
+      if (state.selectedDate === ALL_DATES_VALUE) {
+        if (state.selectedCity === ALL_CITIES_VALUE) labelMetaParts.push(city);
+        labelMetaParts.push(cinemaName);
+      } else if (state.selectedCity === ALL_CITIES_VALUE) {
+        labelMetaParts.push(city);
+      }
+
+      labelMetaParts.push(`${rowItems.length} 场`);
+      const labelMeta = labelMetaParts.join(" · ");
 
       const layout = buildOverlapLayout(rowItems);
       const rowHeight = Math.max(112, 108 + layout.maxLevel * 26);
@@ -302,7 +305,7 @@ function renderTimeline() {
     <div class="timeline">
       <div class="timeline-ruler">
         <div class="timeline-ruler-label">${escapeHtml(
-          state.selectedDate === ALL_DATES_VALUE ? "日期 / 影院" : "影院 / 片区",
+          state.selectedDate === ALL_DATES_VALUE ? "日期 / 影院" : "影院",
         )}</div>
         <div class="timeline-hours" style="width:${laneWidth}px">${hourMarks.join("")}</div>
       </div>
@@ -314,52 +317,9 @@ function renderTimeline() {
     button.addEventListener("click", () => {
       state.selectedScreeningId = button.dataset.screeningId;
       renderTimeline();
-      renderDetail();
       scrollSelectedListCard();
     });
   });
-}
-
-function renderDetail() {
-  const screening = runtime.screeningMap.get(state.selectedScreeningId);
-  if (!screening) {
-    elements["screening-detail"].innerHTML = `<div class="detail-empty">从时间轴或列表里选一个场次。</div>`;
-    return;
-  }
-
-  const color = colorFromUnit(screening.unit);
-  elements["screening-detail"].innerHTML = `
-    <article class="detail-card">
-      <h3>${escapeHtml(screening.filmTitle)}</h3>
-      <p class="list-meta">${escapeHtml(screening.filmTitleEn || "暂无英文名")}</p>
-      <div class="detail-grid">
-        <div class="detail-item">
-          <strong>时间</strong>
-          <span>${escapeHtml(`${formatDateLabel(screening.date)} ${screening.startTime} - ${screening.endTimeBase}`)}</span>
-        </div>
-        <div class="detail-item">
-          <strong>影院</strong>
-          <span>${escapeHtml(`${screening.cinemaName} · ${screening.hall}`)}</span>
-        </div>
-        <div class="detail-item">
-          <strong>片长 / 票价</strong>
-          <span>${escapeHtml(`${screening.runtimeMin} 分钟 · ${screening.price} 元`)}</span>
-        </div>
-        <div class="detail-item">
-          <strong>单元</strong>
-          <span class="badge" style="background:${color.badgeBg};color:${color.badgeText}">${escapeHtml(screening.unit)}</span>
-        </div>
-        <div class="detail-item">
-          <strong>活动</strong>
-          <span>${escapeHtml(screening.hasActivity ? screening.activitySummary : "无活动")}</span>
-        </div>
-        <div class="detail-item">
-          <strong>片区</strong>
-          <span>${escapeHtml(screening.cinemaZoneLabel)}</span>
-        </div>
-      </div>
-    </article>
-  `;
 }
 
 function renderList() {
@@ -374,9 +334,7 @@ function renderList() {
     .sort(compareScreenings)
     .map((screening) => {
       const color = colorFromUnit(screening.unit);
-      const listMeta = state.selectedDate === ALL_DATES_VALUE
-        ? `${formatDateLabel(screening.date)} · ${screening.startTime} · ${screening.cinemaName}`
-        : `${screening.startTime} · ${screening.cinemaName}`;
+      const listMeta = buildListMeta(screening);
       return `
         <article class="list-card" data-list-card="${escapeHtml(screening.id)}">
           <div class="list-top">
@@ -404,7 +362,6 @@ function renderList() {
     button.addEventListener("click", () => {
       state.selectedScreeningId = button.dataset.focusScreening;
       renderTimeline();
-      renderDetail();
       scrollSelectedListCard();
     });
   });
@@ -448,16 +405,53 @@ function buildOverlapLayout(screenings) {
   };
 }
 
+function populateCinemaControl() {
+  const cinemas = runtime.cinemas.filter(
+    (cinema) => state.selectedCity === ALL_CITIES_VALUE || cinema.city === state.selectedCity,
+  );
+
+  setSelectOptions(elements["filter-cinema"], [
+    { value: ALL_CINEMAS_VALUE, label: "全部影院" },
+    ...cinemas.map((cinema) => ({
+      value: cinema.name,
+      label: state.selectedCity === ALL_CITIES_VALUE ? `${cinema.city} · ${cinema.name}` : cinema.name,
+    })),
+  ]);
+
+  if (!cinemas.find((cinema) => cinema.name === state.selectedCinemaName)) {
+    state.selectedCinemaName = ALL_CINEMAS_VALUE;
+  }
+  elements["filter-cinema"].value = state.selectedCinemaName;
+}
+
 function compareScreenings(a, b) {
   return (
     a.startAtMs - b.startAtMs ||
+    compareCities(a.city, b.city) ||
     a.cinemaName.localeCompare(b.cinemaName, "zh-Hans-CN") ||
     a.filmTitle.localeCompare(b.filmTitle, "zh-Hans-CN")
   );
 }
 
+function compareCinemas(a, b) {
+  const aName = a.name || a.cinemaName;
+  const bName = b.name || b.cinemaName;
+  return (
+    compareCities(a.city, b.city) ||
+    aName.localeCompare(bName, "zh-Hans-CN")
+  );
+}
+
+function compareCities(a, b) {
+  return CITY_ORDER.indexOf(a) - CITY_ORDER.indexOf(b);
+}
+
 function getDateSummaryLabel() {
   return state.selectedDate === ALL_DATES_VALUE ? "全部日期" : formatDateLabel(state.selectedDate);
+}
+
+function getCitySummaryLabel() {
+  return state.selectedCity === ALL_CITIES_VALUE ? "全部城市" : state.selectedCity;
 }
 
 function setSelectOptions(select, options) {
@@ -475,6 +469,20 @@ function colorFromUnit(unit) {
     badgeBg: `hsla(${hue}, 70%, 82%, 0.55)`,
     badgeText: `hsl(${hue}, 55%, 30%)`,
   };
+}
+
+function inferCity(zoneId) {
+  if (zoneId === "tianjin") return "天津";
+  if (zoneId === "xiongan") return "雄安";
+  return "北京";
+}
+
+function buildListMeta(screening) {
+  const parts = [];
+  if (state.selectedDate === ALL_DATES_VALUE) parts.push(formatDateLabel(screening.date));
+  if (state.selectedCity === ALL_CITIES_VALUE) parts.push(screening.city);
+  parts.push(screening.startTime, screening.cinemaName);
+  return parts.join(" · ");
 }
 
 function groupBy(items, keyFn) {

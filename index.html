@@ -11,9 +11,9 @@
       <header class="hero">
         <div class="hero-copy">
           <p class="eyebrow">BJIFF Browser</p>
-          <h1>2026北京展映浏览排片</h1>
+          <h1>2026北京国际电影节展映排片</h1>
+          <p class="hero-meta">Made by OldJohn(vx:beatlebubble)</p>
         </div>
-        <div class="hero-stats" id="hero-stats"></div>
       </header>
 
       <main class="layout">
@@ -29,6 +29,11 @@
             <label class="field">
               <span>日期</span>
               <select id="filter-date"></select>
+            </label>
+
+            <label class="field">
+              <span>城市</span>
+              <select id="filter-city"></select>
             </label>
 
             <label class="field">
@@ -49,16 +54,6 @@
             <div class="quick-actions">
               <button class="button secondary" id="reset-filters">重置筛选</button>
             </div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">Selected</p>
-                <h2>场次详情</h2>
-              </div>
-            </div>
-            <div id="screening-detail" class="detail-panel"></div>
           </section>
 
         </aside>
