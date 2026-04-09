@@ -175,6 +175,7 @@ select {
 }
 
 .field input,
+.field textarea,
 .field select {
   width: 100%;
   border: 1px solid rgba(80, 42, 24, 0.14);
@@ -182,6 +183,11 @@ select {
   padding: 12px 14px;
   background: rgba(255, 255, 255, 0.72);
   color: var(--text);
+}
+
+.field textarea {
+  min-height: 92px;
+  resize: vertical;
 }
 
 .choice-list {

@@ -59,6 +59,8 @@ function prepareRuntimeData() {
         city: inferCity(screening.cinemaZoneId),
         startAtMs: parseIsoToLocalMs(screening.startAt),
         normalizedFilmTitle: normalizeText(screening.filmTitle),
+        normalizedFilmTitleEn: normalizeText(screening.filmTitleEn || ""),
+        normalizedFilmSearchText: normalizeText(`${screening.filmTitle || ""} ${screening.filmTitleEn || ""}`),
         normalizedCinemaName: normalizeText(screening.cinemaName),
         normalizedActivity: normalizeText(screening.activitySummary || ""),
       };
@@ -203,22 +205,16 @@ function syncSelection() {
 }
 
 function getFilteredScreenings() {
-  const query = normalizeText(state.searchTerm);
+  const filmQueries = parseFilmQueries(state.searchTerm);
   return runtime.screenings.filter((screening) => {
     if (state.selectedDate !== ALL_DATES_VALUE && screening.date !== state.selectedDate) return false;
     if (state.selectedCity !== ALL_CITIES_VALUE && screening.city !== state.selectedCity) return false;
     if (state.selectedCinemaNames.length && !state.selectedCinemaNames.includes(screening.cinemaName)) return false;
     if (!matchesActivityFilter(screening, state.selectedActivity)) return false;
     if (state.selectedUnit !== "all" && screening.unit !== state.selectedUnit) return false;
-    if (!query) return true;
+    if (!filmQueries.length) return true;
 
-    const haystack = [
-      screening.normalizedFilmTitle,
-      screening.normalizedCinemaName,
-      normalizeText(screening.unit),
-      screening.normalizedActivity,
-    ].join(" ");
-    return haystack.includes(query);
+    return filmQueries.some((query) => screening.normalizedFilmSearchText.includes(query));
   });
 }
 
@@ -532,6 +528,13 @@ function setSelectOptions(select, options) {
   select.innerHTML = options
     .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
     .join("");
+}
+
+function parseFilmQueries(input) {
+  return (input || "")
+    .split(/[\n,，、;；/|]+/g)
+    .map((part) => normalizeText(part))
+    .filter(Boolean);
 }
 
 function getAvailableCinemas() {
